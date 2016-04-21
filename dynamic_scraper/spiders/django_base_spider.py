@@ -2,6 +2,7 @@
 from __future__ import unicode_literals
 from builtins import str
 import datetime, json, logging, os
+from dateutil import parser
 from scrapy import signals
 from scrapy.spiders import Spider
 from scrapy.spiders import CrawlSpider
@@ -18,7 +19,7 @@ from dynamic_scraper.models import Log, LogMarker
 
 
 class DjangoBaseSpider(CrawlSpider):
-    
+
     name = None
     action_successful = False
     mandatory_vars = ['ref_object', 'scraper', 'scrape_url',]
@@ -37,28 +38,45 @@ class DjangoBaseSpider(CrawlSpider):
     mp_request_kwargs = {}
     dp_request_kwargs = {}
 
-    command  = 'scrapy crawl SPIDERNAME -a id=REF_OBJECT_ID '
+    command  = 'scrapy crawl SPIDERNAME -a gs_name=REF_OBJECT_NAME'
+    command += ' -a target_date=[YYYYMMDD-HHMM]'
     command += '[-a do_action=(yes|no) -a run_type=(TASK|SHELL)'
     command += ' -a max_items_read=[Int] -a max_items_save=[Int]]'
     command += ' -a max_pages_read=[Int]'
-    
-    
+
+
     def __init__(self, *args, **kwargs):
         msg = "Django settings used: {s}".format(s=os.environ.get("DJANGO_SETTINGS_MODULE"))
         logging.info(msg)
-        
         super(DjangoBaseSpider,  self).__init__(None, **kwargs)
-        
+
         self._check_mandatory_vars()
 
 
     def _set_ref_object(self, ref_object_class, **kwargs):
-        if not 'id' in kwargs:
-            msg = "You have to provide an ID (Command: {c}).".format(c=self.command)
+        if not 'gs_name' in kwargs:   # GeneralScraper's name
+            msg = "You have to provide an name (Command: {c}).".format(c=self.command)
             logging.error(msg)
             raise CloseSpider(msg)
+
         try:
-            self.ref_object = ref_object_class.objects.get(pk=kwargs['id'])
+            self.ref_object = ref_object_class.objects.get(name=kwargs['gs_name'])
+            if not 'target_date' in kwargs:
+                logging.info("Using the latest scraper")
+                self.scraper = self.ref_object.get_latest_scraper()
+                self.target_datetime = datetime.datetime.now()   # [TODO] utcnow() is better?
+            else:
+                dt = parser.parse(kwargs['target_date'])
+                self.scraper = self.ref_object.get_scraper_by_datetime(dt)
+                self.target_datetime = dt
+
+        except ValueError:   # datetime parse failed
+            msg = "Couldn't parse target date string: {s}".format(
+                s=kwargs['target_date']
+            )
+            logging.error(msg)
+            raise CloseSpider(msg)
+
         except ObjectDoesNotExist:
             msg = "Object with ID {id} not found (Command: {c}).".format(
                 id=kwargs['id'], c=self.command)
@@ -85,8 +103,8 @@ class DjangoBaseSpider(CrawlSpider):
             if len(log_msg) > 0:
                 log_msg += ", "
             log_msg += "do_action " + str(self.conf['DO_ACTION'])
-        
-        self.conf['SPLASH_ARGS'] = settings.get('DSCRAPER_SPLASH_ARGS', self.conf['SPLASH_ARGS'])  
+
+        self.conf['SPLASH_ARGS'] = settings.get('DSCRAPER_SPLASH_ARGS', self.conf['SPLASH_ARGS'])
         if 'wait' not in self.conf['SPLASH_ARGS']:
             self.conf['SPLASH_ARGS']['wait'] = 0.5
 
@@ -112,7 +130,7 @@ class DjangoBaseSpider(CrawlSpider):
         self.conf['LOG_LEVEL'] = settings.get('DSCRAPER_LOG_LEVEL', self.conf['LOG_LEVEL'])
         self.conf['LOG_LIMIT'] = settings.get('DSCRAPER_LOG_LIMIT', self.conf['LOG_LIMIT'])
         self.log("Runtime config: " + log_msg, logging.INFO)
-        
+
         dispatcher.connect(self.spider_closed, signal=signals.spider_closed)
 
 
@@ -124,14 +142,14 @@ class DjangoBaseSpider(CrawlSpider):
                 raise CloseSpider(msg)
             msg = "SchedulerRuntime (" + str(self.scheduler_runtime) + ") found."
             self.log(msg, logging.INFO)
-        
+
         for var in self.mandatory_vars:
             attr = getattr(self, var, None)
             if not attr:
                 msg = "Missing attribute {a} (Command: {c}).".format(a=var, c=self.command)
                 logging.error(msg)
                 raise CloseSpider(msg)
-            
+
         if self.scraper.status == 'P' or self.scraper.status == 'I':
             msg = 'Scraper status set to {s}!'.format(s=self.scraper.get_status_display())
             self.log(msg, logging.WARNING)
@@ -180,7 +198,7 @@ class DjangoBaseSpider(CrawlSpider):
                 if not isinstance(meta, dict):
                     raise CloseSpider("Incorrect meta attribute ({a}): not a valid JSON dict!".format(a=rpt.page_type))
                 pt_dict['meta'] = meta
-    
+
 
     def _set_meta_splash_args(self):
         for rpt in self.scraper.requestpagetype_set.all():
@@ -198,7 +216,7 @@ class DjangoBaseSpider(CrawlSpider):
 
     def spider_closed(self):
         if self.conf['RUN_TYPE'] == 'TASK' and self.conf['DO_ACTION']:
-            
+
             time_delta, factor, num_crawls = self.scheduler.calc_next_action_time(\
                     self.action_successful,\
                     self.scheduler_runtime.next_action_factor,\
@@ -212,11 +230,11 @@ class DjangoBaseSpider(CrawlSpider):
             msg += "Next action factor: {naf}, ".format(naf=str(self.scheduler_runtime.next_action_factor))
             msg += "Zero actions: {za})".format(za=str(self.scheduler_runtime.num_zero_actions))
             self.log(msg, logging.INFO)
-    
-    
+
+
     def log(self, message, level=logging.DEBUG):
         if self.conf['RUN_TYPE'] == 'TASK' and self.conf['DO_ACTION']:
-            
+
             if self.conf['LOG_ENABLED'] and level >= getattr(logging, self.conf['LOG_LEVEL']):
                 l = Log()
                 l.message = message
@@ -225,7 +243,7 @@ class DjangoBaseSpider(CrawlSpider):
                 l.level = int(level)
                 l.spider_name = self.name
                 l.scraper = self.scraper
-                
+
                 # Look for corresponding log markers
                 lms = LogMarker.objects.filter(
                     Q(ref_object=l.ref_object) | Q(ref_object=''),
@@ -239,13 +257,11 @@ class DjangoBaseSpider(CrawlSpider):
                         else:
                             l.type = lm.get_mark_with_type_display()
                 l.save()
-                
+
                 #Delete old logs
                 if Log.objects.count() > self.conf['LOG_LIMIT']:
                     items = Log.objects.all()[self.conf['LOG_LIMIT']:]
                     for item in items:
                         item.delete()
-        
+
         logging.log(level, message)
-        
-    

@@ -8,6 +8,8 @@ import datetime
 from django.db import models
 from django.db.models import Q
 
+from scrapy.utils.url import canonicalize_url
+
 
 @python_2_unicode_compatible
 class ScrapedObjClass(models.Model):
@@ -25,7 +27,7 @@ class ScrapedObjClass(models.Model):
 "ZERO_ACTIONS_FACTOR_CHANGE": 5,\n\
 "FACTOR_CHANGE_FACTOR": 1.3,\n')
     comments = models.TextField(blank=True)
-    
+
     def __str__(self):
         return self.name
 
@@ -50,12 +52,34 @@ class ScrapedObjAttr(models.Model):
     attr_type = models.CharField(max_length=1, choices=ATTR_TYPE_CHOICES)
     id_field = models.BooleanField(default=False)
     save_to_db = models.BooleanField(default=True)
-    
+
     def __str__(self):
         return self.name + " (" + str(self.obj_class) + ")"
-    
+
     class Meta(object):
         ordering = ['order',]
+
+
+@python_2_unicode_compatible
+class GeneralScraper(models.Model):
+    name = models.CharField(max_length=200, unique=True)
+    url = models.URLField()
+    scraper_runtime = models.ForeignKey(
+        'SchedulerRuntime',
+        blank=True,
+        null=True,
+        on_delete=models.SET_NULL
+    )
+
+    def __str__(self):
+        return self.name
+
+    def get_scraper_by_datetime(self, dt):
+        # [TODO]
+        return self.scraper_set.get(valid_until__isnull=True)
+
+    def get_latest_scraper(self):
+        return self.scraper_set.get(valid_until__isnull=True)
 
 
 @python_2_unicode_compatible
@@ -92,14 +116,14 @@ class Scraper(models.Model):
     pagination_type = models.CharField(max_length=1, choices=PAGINATION_TYPE, default='N')
     pagination_on_start = models.BooleanField(default=False)
     pagination_append_str = models.CharField(max_length=200, blank=True, help_text="Syntax: /somepartofurl/{page}/moreurlstuff.html")
-    pagination_page_replace = models.TextField(blank=True, 
+    pagination_page_replace = models.TextField(blank=True,
         help_text="RANGE_FUNCT: uses Python range funct., syntax: [start], stop[, step], FREE_LIST: 'Replace text 1', 'Some other text 2', 'Maybe a number 3', ...")
-    last_scraper_save_alert_period = models.CharField(max_length=5, blank=True, 
+    last_scraper_save_alert_period = models.CharField(max_length=5, blank=True,
         help_text="Optional, used for scraper monitoring with 'check_last_scraper_saves' management cmd, \
         syntax: [HOURS]h or [DAYS]d or [WEEKS]w (e.g. '6h', '5d', '2w')")
     next_last_scraper_save_alert = models.DateTimeField(default=datetime.datetime.now,
         help_text="Next time the last scraper save will be alerted, normally set on management cmd run.",)
-    last_checker_delete_alert_period = models.CharField(max_length=5, blank=True, 
+    last_checker_delete_alert_period = models.CharField(max_length=5, blank=True,
         help_text="Optional, used for scraper monitoring with 'check_last_checker_deletes' management cmd, \
         syntax: [HOURS]h or [DAYS]d or [WEEKS]w (e.g. '6h', '5d', '2w')")
     next_last_checker_delete_alert = models.DateTimeField(default=datetime.datetime.now,
@@ -107,7 +131,20 @@ class Scraper(models.Model):
     comments = models.TextField(blank=True)
     last_scraper_save = models.DateTimeField(null=True, blank=True)
     last_checker_delete = models.DateTimeField(null=True, blank=True)
-    
+
+    # fields for versionized scraper
+    general_scraper = models.ForeignKey(GeneralScraper, null=True, blank=True)
+    dupefilter_exclude_urls = models.TextField(blank=True)
+    valid_until = models.DateTimeField(blank=True, null=True, unique=True)
+
+    def is_excluded_url(self, url):
+        excluded_urls = set()
+        for ex_url in self.dupefilter_exclude_urls.split('\n'):
+            excluded_urls.add(canonicalize_url(ex_url))
+        if not excluded_urls:
+            return False
+        return canonicalize_url(url) in excluded_urls   # exact match
+
     def get_alert_period_timedelta(self, attribute_str):
         if getattr(self, attribute_str) and len(getattr(self, attribute_str)) >= 2:
             period_str = getattr(self, attribute_str)[-1]
@@ -127,18 +164,18 @@ class Scraper(models.Model):
                 return None
         else:
             return None
-    
+
     def get_last_scraper_save_alert_period_timedelta(self):
         return self.get_alert_period_timedelta('last_scraper_save_alert_period')
-    
+
     def get_last_checker_delete_alert_period_timedelta(self):
         return self.get_alert_period_timedelta('last_checker_delete_alert_period')
-    
+
     def get_main_page_rpt(self):
         return self.requestpagetype_set.get(page_type='MP')
 
     def get_detail_page_rpts(self):
-        return s.requestpagetype_set.filter(~Q(page_type='MP'))
+        return self.requestpagetype_set.filter(~Q(page_type='MP'))
 
     def get_rpt(self, page_type):
         return self.requestpagetype_set.get(page_type=page_type)
@@ -148,16 +185,16 @@ class Scraper(models.Model):
 
     def get_base_elems(self):
         return self.scraperelem_set.filter(scraped_obj_attr__attr_type='B')
-    
+
     def get_base_elem(self):
         return self.scraperelem_set.get(scraped_obj_attr__attr_type='B')
-    
+
     def get_detail_page_url_elems(self):
         return self.scraperelem_set.filter(scraped_obj_attr__attr_type='U')
 
     def get_detail_page_url_id_elems(self):
         return self.scraperelem_set.filter(scraped_obj_attr__attr_type='U', scraped_obj_attr__id_field=True)
-    
+
     def get_standard_elems(self):
         q1 = Q(scraped_obj_attr__attr_type='S')
         q2 = Q(scraped_obj_attr__attr_type='T')
@@ -175,35 +212,40 @@ class Scraper(models.Model):
 
     def get_standard_update_elems_from_detail_pages(self):
         return self.scraperelem_set.filter(scraped_obj_attr__attr_type='T').filter(~Q(request_page_type='MP'))
-    
+
     def get_image_elems(self):
         return self.scraperelem_set.filter(scraped_obj_attr__attr_type='I')
-    
+
     def get_image_elem(self):
         return self.scraperelem_set.get(scraped_obj_attr__attr_type='I')
-    
+
     def get_scrape_elems(self):
         q1 = Q(scraped_obj_attr__attr_type='S')
         q2 = Q(scraped_obj_attr__attr_type='T')
         q3 = Q(scraped_obj_attr__attr_type='U')
         q4 = Q(scraped_obj_attr__attr_type='I')
         return self.scraperelem_set.filter(q1 | q2 | q3 | q4)
-    
+
     def get_mandatory_scrape_elems(self):
         q1 = Q(scraped_obj_attr__attr_type='S')
         q2 = Q(scraped_obj_attr__attr_type='T')
         q3 = Q(scraped_obj_attr__attr_type='U')
         q4 = Q(scraped_obj_attr__attr_type='I')
         return self.scraperelem_set.filter(q1 | q2 | q3 | q4).filter(mandatory=True)
-    
+
     def get_from_detail_pages_scrape_elems(self):
         return self.scraperelem_set.filter(~Q(request_page_type='MP'))
-    
+
     def __str__(self):
-        return self.name + " (" + self.scraped_obj_class.name + ")"
-    
+        valid_datetime_str = "latest" if not self.valid_until else str(self.valid_until)
+        return "{name} ({scraped_obj_class} @ {datetime})".format(
+            name=self.name,
+            scraped_obj_class=self.scraped_obj_class.name,
+            datetime=valid_datetime_str
+        )
+
     class Meta(object):
-        ordering = ['name', 'scraped_obj_class',]
+        ordering = ['name', 'scraped_obj_class', '-valid_until']
 
 
 @python_2_unicode_compatible
@@ -257,15 +299,15 @@ class Checker(models.Model):
     checker_x_path_result = models.TextField(blank=True)
     checker_ref_url = models.URLField(max_length=500, blank=True)
     comments = models.TextField(blank=True)
-    
+
     def __str__(self):
         return  str(self.scraped_obj_attr) + ' > ' + self.get_checker_type_display()
-    
+
 
 class ScraperElem(models.Model):
     REQUEST_PAGE_TYPE_CHOICES = tuple([("MP", "Main Page")] + [("DP{n}".format(n=str(n)), "Detail Page {n}".format(n=str(n))) for n in list(range(1, 26))])
     scraped_obj_attr = models.ForeignKey(ScrapedObjAttr)
-    scraper = models.ForeignKey(Scraper)   
+    scraper = models.ForeignKey(Scraper)
     x_path = models.TextField(blank=True)
     reg_exp = models.TextField(blank=True)
     #from_detail_page = models.BooleanField(default=False)
@@ -273,16 +315,16 @@ class ScraperElem(models.Model):
     processors = models.TextField(blank=True)
     proc_ctxt = models.TextField(blank=True)
     mandatory = models.BooleanField(default=True)
-    
+
     def __str__(self):
         return '{s} > {soa} Attribute ({rpt})'.format(
             s=str(self.scraper),
             soa=self.scraped_obj_attr.name,
             rpt=self.get_request_page_type_display())
-    
+
     class Meta(object):
         ordering = ['scraped_obj_attr__order',]
-    
+
 
 
 @python_2_unicode_compatible
@@ -295,10 +337,10 @@ class SchedulerRuntime(models.Model):
     next_action_time = models.DateTimeField(default=datetime.datetime.now)
     next_action_factor = models.FloatField(blank=True, null=True)
     num_zero_actions = models.IntegerField(default=0)
-    
+
     def __str__(self):
         return str(self.id)
-    
+
     class Meta(object):
         ordering = ['next_action_time',]
 
@@ -310,7 +352,7 @@ class LogMarker(models.Model):
         ('IM', 'Important'),
         ('IG', 'Ignore'),
         ('MI', 'Miscellaneous'),
-        ('CU', 'Custom'),            
+        ('CU', 'Custom'),
     )
     message_contains = models.CharField(max_length=255)
     help_text = "Use the string format from the log messages"
@@ -337,14 +379,14 @@ class Log(models.Model):
     spider_name = models.CharField(max_length=200)
     scraper = models.ForeignKey(Scraper, blank=True, null=True)
     date = models.DateTimeField(default=datetime.datetime.now)
-    
+
     @staticmethod
     def numeric_level(level):
         numeric_level = 0
         for choice in Log.LEVEL_CHOICES:
             if choice[1] == level:
                 numeric_level = choice[0]
-        return numeric_level        
-    
+        return numeric_level
+
     class Meta(object):
         ordering = ['-date']
