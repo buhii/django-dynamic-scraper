@@ -83,6 +83,10 @@ class DjangoBaseSpider(CrawlSpider):
             logging.error(msg)
             raise CloseSpider(msg)
 
+        # Set attributes for the feed exporter middleware URI
+        self.category = self.scraper.general_scraper.category
+        self.spider_name = kwargs['gs_name']
+        self.feed_filename = self.target_datetime.strftime("%Y-%m-%d/%H:%M.json")
 
     def _set_config(self, log_msg, **kwargs):
         from scrapy.utils.project import get_project_settings

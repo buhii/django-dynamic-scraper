@@ -61,8 +61,21 @@ class ScrapedObjAttr(models.Model):
 
 
 @python_2_unicode_compatible
+class GeneralScraperCategory(models.Model):
+    name = models.CharField(max_length=200)
+
+    def __str__(self):
+        return self.name
+
+    class Meta(object):
+        verbose_name = "General scraper category"
+        verbose_name_plural = "General scraper categories"
+
+
+@python_2_unicode_compatible
 class GeneralScraper(models.Model):
     name = models.CharField(max_length=200, unique=True)
+    caption = models.CharField(max_length=200)
     url = models.URLField()
     scraper_runtime = models.ForeignKey(
         'SchedulerRuntime',
@@ -70,9 +83,10 @@ class GeneralScraper(models.Model):
         null=True,
         on_delete=models.SET_NULL
     )
+    category = models.ForeignKey(GeneralScraperCategory, blank=True, null=True)
 
     def __str__(self):
-        return self.name
+        return "%s (%s)" % (self.caption, self.name)
 
     def get_scraper_by_datetime(self, dt):
         # [TODO]
@@ -139,7 +153,7 @@ class Scraper(models.Model):
 
     def is_excluded_url(self, url):
         excluded_urls = set()
-        for ex_url in self.dupefilter_exclude_urls.split('\n'):
+        for ex_url in self.dupefilter_exclude_urls.split('\n') + [self.general_scraper.url]:
             excluded_urls.add(canonicalize_url(ex_url))
         if not excluded_urls:
             return False

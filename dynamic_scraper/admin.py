@@ -113,8 +113,12 @@ class ScraperElemInline(admin.TabularInline):
     extra = 3
 
 
+class GeneralScraperCategoryAdmin(admin.ModelAdmin):
+    pass
+
+
 class GeneralScraperAdmin(admin.ModelAdmin):
-    list_display = ('id', 'name', 'url_', 'scraper_runtime')
+    list_display = ('id', 'category', 'name', 'caption', 'url_', 'scraper_runtime')
     list_display_links = ('name', )
 
     def url_(self, instance):
@@ -314,6 +318,7 @@ class LogAdmin(admin.ModelAdmin):
 admin.site.register(ScrapedObjClass, ScrapedObjClassAdmin)
 admin.site.register(Scraper, ScraperAdmin)
 admin.site.register(GeneralScraper, GeneralScraperAdmin)
+admin.site.register(GeneralScraperCategory, GeneralScraperCategoryAdmin)
 admin.site.register(SchedulerRuntime, SchedulerRuntimeAdmin)
 admin.site.register(LogMarker, LogMarkerAdmin)
 admin.site.register(Log, LogAdmin)

@@ -206,7 +206,7 @@ class DjangoSpider(DjangoBaseSpider):
             if 'meta' not in kwargs:
                     kwargs['meta'] = {}
             kwargs['meta']['page'] = index + 1
-            kwargs['meta']['scraper'] = self
+            kwargs['meta']['scraper'] = self.scraper
             rpt = self.scraper.get_main_page_rpt()
             index += 1
             if rpt.request_type == 'R':
@@ -480,7 +480,7 @@ class DjangoSpider(DjangoBaseSpider):
                         else:
                             kwargs['meta']['last'] = False
                         self._set_meta_splash_args()
-                        kwargs['meta']['scraper'] = self
+                        kwargs['meta']['scraper'] = self.scraper
                         #logging.info(str(kwargs))
                         if rpt.request_type == 'R':
                             yield Request(url, callback=self.parse_item, method=rpt.method, dont_filter=rpt.dont_filter, **kwargs)
