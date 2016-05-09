@@ -24,6 +24,7 @@ from dynamic_scraper.utils.loader import JsonItemLoader
 from dynamic_scraper.utils.scheduler import Scheduler
 from dynamic_scraper.utils import processors
 
+from scrapy_webdriver.http import WebdriverRequest
 
 
 class DjangoSpider(DjangoBaseSpider):
@@ -210,7 +211,7 @@ class DjangoSpider(DjangoBaseSpider):
             rpt = self.scraper.get_main_page_rpt()
             index += 1
             if rpt.request_type == 'R':
-                yield Request(url, callback=self.parse, method=rpt.method, dont_filter=rpt.dont_filter, **kwargs)
+                yield WebdriverRequest(url, callback=self.parse, method=rpt.method, dont_filter=rpt.dont_filter, **kwargs)
             else:
                 yield FormRequest(url, callback=self.parse, method=rpt.method, formdata=form_data, dont_filter=rpt.dont_filter, **kwargs)
 
@@ -483,7 +484,7 @@ class DjangoSpider(DjangoBaseSpider):
                         kwargs['meta']['scraper'] = self.scraper
                         #logging.info(str(kwargs))
                         if rpt.request_type == 'R':
-                            yield Request(url, callback=self.parse_item, method=rpt.method, dont_filter=rpt.dont_filter, **kwargs)
+                            yield WebdriverRequest(url, callback=self.parse_item, method=rpt.method, dont_filter=rpt.dont_filter, **kwargs)
                         else:
                             yield FormRequest(url, callback=self.parse_item, method=rpt.method, formdata=self.dp_form_data[rpt.page_type], dont_filter=rpt.dont_filter, **kwargs)
             else:
