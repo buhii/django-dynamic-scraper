@@ -2,6 +2,26 @@
 from __future__ import unicode_literals
 from builtins import str
 import datetime, logging, re
+from html.parser import HTMLParser
+
+
+# http://stackoverflow.com/questions/753052/strip-html-from-strings-in-python
+class MLStripper(HTMLParser):
+    def __init__(self):
+        self.reset()
+        self.strict = False
+        self.convert_charrefs= True
+        self.fed = []
+    def handle_data(self, d):
+        self.fed.append(d)
+    def get_data(self):
+        return ''.join(self.fed)
+
+
+def strip_tags(html):
+    s = MLStripper()
+    s.feed(html)
+    return s.get_data()
 
 
 def string_strip(text, loader_context):
@@ -14,19 +34,19 @@ def string_strip(text, loader_context):
 def remove_chars(text, loader_context):
     pattern = loader_context.get('remove_chars', '')
     result_str = re.sub(pattern, '', str(text))
-    
+
     return result_str
 
 
 def pre_string(text, loader_context):
     pre_str = loader_context.get('pre_string', '')
-    
+
     return pre_str  + text
 
 
 def post_string(text, loader_context):
     post_str = loader_context.get('post_string', '')
-    
+
     return text + post_str
 
 
@@ -35,10 +55,10 @@ def pre_url(text, loader_context):
 
     if(pre_url[0:7] == 'http://' and text[0:7] == 'http://'):
         return text
-    
+
     if(pre_url[-1:] == '/' and text[0:1] == '/'):
         pre_url = pre_url[:-1]
-    
+
     return pre_url + text
 
 
