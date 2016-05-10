@@ -12,7 +12,7 @@ from jsonpath_rw.lexer import JsonPathLexerError
 from scrapy.selector import Selector
 from scrapy.http import Request, FormRequest
 from scrapy.loader import ItemLoader
-from scrapy.loader.processors import Join
+from scrapy.loader.processors import Join, TakeFirst
 from scrapy.exceptions import CloseSpider
 
 from django.db.models.signals import post_save
@@ -249,7 +249,11 @@ class DjangoSpider(DjangoBaseSpider):
 
 
     def _get_processors(self, procs_str):
-        procs = [DoubleNewlineJoin, processors.strip_tags, processors.string_strip, ]
+        # [FIXME] dirty code
+        if procs_str == "DoubleNewlineJoin":
+            return [DoubleNewlineJoin, processors.strip_tags, processors.string_strip, ]
+
+        procs = [TakeFirst(), processors.string_strip,]
 
         if not procs_str:
             return procs
@@ -323,7 +327,7 @@ class DjangoSpider(DjangoBaseSpider):
                 self.loader = JsonItemLoader(item=item, selector=xs)
             else:
                 self.loader = ItemLoader(item=item, selector=xs)
-        self.loader.default_output_processor = DoubleNewlineJoin
+        self.loader.default_output_processor = TakeFirst()
         self.loader.log = self.log
 
 
@@ -342,7 +346,7 @@ class DjangoSpider(DjangoBaseSpider):
                 self.dummy_loader = JsonItemLoader(item=DummyItem(), selector=xs)
             else:
                 self.dummy_loader = ItemLoader(item=DummyItem(), selector=xs)
-        self.dummy_loader.default_output_processor = DoubleNewlineJoin
+        self.dummy_loader.default_output_processor = TakeFirst()
         self.dummy_loader.log = self.log
 
 
