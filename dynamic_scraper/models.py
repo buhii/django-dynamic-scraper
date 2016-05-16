@@ -1,5 +1,6 @@
 #Stage 2 Update (Python 3)
 from __future__ import unicode_literals
+import logging
 from django.utils.encoding import python_2_unicode_compatible
 from builtins import range
 from builtins import str
@@ -9,6 +10,9 @@ from django.db import models
 from django.db.models import Q
 
 from scrapy.utils.url import canonicalize_url
+
+
+logger = logging.getLogger(__name__)
 
 
 @python_2_unicode_compatible
@@ -149,15 +153,29 @@ class Scraper(models.Model):
     # fields for versionized scraper
     general_scraper = models.ForeignKey(GeneralScraper, null=True, blank=True)
     dupefilter_exclude_urls = models.TextField(blank=True)
+    dupefilter_unnecessary_urls = models.TextField(blank=True)
     valid_until = models.DateTimeField(blank=True, null=True, unique=True)
 
-    def is_excluded_url(self, url):
+    def is_dupe_excluded_url(self, url):
         excluded_urls = set()
-        for ex_url in self.dupefilter_exclude_urls.split('\n') + [self.general_scraper.url]:
+        for ex_url in list(filter(lambda s: s, self.dupefilter_exclude_urls.split('\n'))) + [self.general_scraper.url]:
             excluded_urls.add(canonicalize_url(ex_url))
-        if not excluded_urls:
-            return False
-        return canonicalize_url(url) in excluded_urls   # exact match
+
+        target_url = canonicalize_url(url)
+        for ex_url in excluded_urls:
+            if ex_url in target_url:
+                return True
+        return False
+
+    def is_unnecessary_url(self, url):
+        unnecessary_urls = list(
+            filter(lambda s: s,
+                   map(lambda s: s.rstrip('\r'), self.dupefilter_unnecessary_urls.split('\n'))))
+        target_url = canonicalize_url(url)
+        for u_url in unnecessary_urls:
+            if u_url in target_url:
+                return True
+        return False
 
     def get_alert_period_timedelta(self, attribute_str):
         if getattr(self, attribute_str) and len(getattr(self, attribute_str)) >= 2:

@@ -159,7 +159,7 @@ class ScraperAdmin(admin.ModelAdmin):
                 'last_checker_delete_alert_period', 'next_last_checker_delete_alert',)
         }),
         ('Versionized scraper options', {
-            'fields': ('valid_until', 'dupefilter_exclude_urls'),
+            'fields': ('valid_until', 'dupefilter_exclude_urls', 'dupefilter_unnecessary_urls'),
         }),
         ('Miscellaneous', {
             'classes': ('collapse',),

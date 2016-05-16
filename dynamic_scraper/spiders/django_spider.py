@@ -252,6 +252,8 @@ class DjangoSpider(DjangoBaseSpider):
         # [FIXME] dirty code
         if procs_str == "DoubleNewlineJoin":
             return [DoubleNewlineJoin, processors.strip_tags, processors.string_strip, ]
+        elif procs_str == "JoinTags":
+            return [DoubleNewlineJoin, processors.string_strip, ]
 
         procs = [TakeFirst(), processors.string_strip,]
 
