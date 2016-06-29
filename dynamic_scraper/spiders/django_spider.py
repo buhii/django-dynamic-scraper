@@ -6,6 +6,8 @@ from builtins import map
 from builtins import range
 import ast, datetime, json, logging, scrapy
 
+from urllib.parse import urlsplit
+
 from jsonpath_rw import jsonpath, parse
 from jsonpath_rw.lexer import JsonPathLexerError
 
@@ -473,6 +475,7 @@ class DjangoSpider(DjangoBaseSpider):
                     #self.run_detail_page_request()
                     url_elems = self.scraper.get_detail_page_url_elems()
                     for url_elem in url_elems:
+
                         if not url_elem.scraped_obj_attr.save_to_db:
                             url = self.tmp_non_db_results[item_num][url_elem.scraped_obj_attr.name]
                             url = self._replace_detail_page_url_placeholders(url, item, item_num)
@@ -481,6 +484,10 @@ class DjangoSpider(DjangoBaseSpider):
                             url = item[url_elem.scraped_obj_attr.name]
                             url = self._replace_detail_page_url_placeholders(url, item, item_num)
                             item[url_elem.scraped_obj_attr.name] = url
+
+                        if not urlsplit(url).scheme:   # relative url
+                            url = response.urljoin(url)
+
                         rpt = self.scraper.get_rpt_for_scraped_obj_attr(url_elem.scraped_obj_attr)
                         kwargs = self.dp_request_kwargs[rpt.page_type].copy()
                         if 'meta' not in kwargs:
