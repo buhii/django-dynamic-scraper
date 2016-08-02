@@ -157,14 +157,20 @@ class Scraper(models.Model):
     valid_until = models.DateTimeField(blank=True, null=True, unique=True)
 
     def is_dupe_excluded_url(self, url):
-        excluded_urls = set()
-        for ex_url in list(filter(lambda s: s, self.dupefilter_exclude_urls.split('\n'))) + [self.general_scraper.url]:
-            excluded_urls.add(canonicalize_url(ex_url))
-
         target_url = canonicalize_url(url)
+
+        # Check GeneralScraper url (exact match)
+        if target_url == canonicalize_url(self.general_scraper.url):
+            return True
+
+        # Check exclude_urls
+        excluded_urls = set()
+        for ex_url in list(filter(lambda s: s, self.dupefilter_exclude_urls.split('\n'))):
+            excluded_urls.add(canonicalize_url(ex_url))
         for ex_url in excluded_urls:
             if ex_url in target_url:
                 return True
+
         return False
 
     def is_unnecessary_url(self, url):
